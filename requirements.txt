@@ -1,0 +1,12 @@
+botorch==0.12.0
+gurobipy==11.0.3
+matplotlib==3.8.4
+numpy==2.3.2
+pandas==2.3.1
+Pillow==11.3.0
+pyepo==0.4.5
+scikit_learn==1.4.2
+scipy==1.16.1
+torch==2.4.1
+torchattacks==3.5.1
+torchvision==0.19.1
