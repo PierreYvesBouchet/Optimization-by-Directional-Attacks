@@ -36,7 +36,7 @@ problems/
 
 ### Off-the-shelves execution of the code
 To replicate our results without modifying anything in the code, proceed as follows. Decide which problem you wish to replicate. It could be either "barycentric_image_into_resnet", or "warcraft_map_counterfactual", or "bio_pinn". let us denote this string by problem_name. Then, run the following command:
-```python make.py problem_name -3 -2 -1 0 1 2 3```
+```python main.py problem_name -3 -2 -1 0 1 2 3```
 
 
 ### Parallelization of the experiments
@@ -48,16 +48,16 @@ The execution of the command above may be time-consumming. Indded, it will, in s
 
 To save some time, you may want to proceed as follows.
 First, if you wish to re-generate the NN involved in the problem, run
-```python make.py problem_name -3```
+```python main.py problem_name -3```
 However, this step is optional since all data related to the problems are already accessible in problems/problem_name/problem. Second, run the experiments from the following batch of commands (they could all be executed in parallel)
 ```
-python make.py problem_name 0   # runs the hybrid method
-python make.py problem_name 1   # runs the direct search method
-python make.py problem_name 2   # runs the local attacks method
-python make.py problem_name 3   # runs the random line searches method
+python main.py problem_name 0   # runs the hybrid method
+python main.py problem_name 1   # runs the direct search method
+python main.py problem_name 2   # runs the local attacks method
+python main.py problem_name 3   # runs the random line searches method
 ```
 Third, run
-```python make.py problem_name -2```
+```python main.py problem_name -2```
 to run the experiment related to the potential of the attack operator. Finally, run
-```python make.py problem_name -1```
+```python main.py problem_name -1```
 to generate all graphs related to all experiments.
