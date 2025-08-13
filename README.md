@@ -40,14 +40,14 @@ To replicate our results without modifying anything in the code, proceed as foll
 
 
 ### Parallelization of the experiments
-The execution of the command above may be time-consumming. Indded, it will, in sequential order,
-- re-generate the NN involved in the problem,
+The execution of the command above may be time-consumming. Indeed, it will, in sequential order,
+- re-generate the NN and all parameters involved in the problem,
 - sequentially run all four method that we compare in the paper,
 - run the experiment related to the potential of the attack operator,
 - generate all the graphs.
 
 To save some time, you may want to proceed as follows.
-First, to re-generate the NN involved in the problem, run
+First, to re-generate the NN and parameters involved in the problem, run
 ```python main.py problem_name -3```
 Second, run all optimization methods via the following batch of commands (they could all be executed in parallel)
 ```
