@@ -1,5 +1,5 @@
 # Optimization-by-Directional-Attacks
-This is the official repository for the research paper "Optimization by Directional Attacks: Turning Adversarial Tools into Solvers for Optimization Through a Trained Neural Network", P.-Y. Bouchet and T. Vidal.
+This repository is related to the research paper "Optimization by Directional Attacks: Turning Adversarial Tools into Solvers for Optimization Through a Trained Neural Network", P.-Y. Bouchet and T. Vidal.
 This repository is not intended to be developed further, its purpose is solely to allow for replication of our experiments.
 
 
@@ -47,9 +47,9 @@ The execution of the command above may be time-consumming. Indded, it will, in s
 - generate all the graphs.
 
 To save some time, you may want to proceed as follows.
-First, if you wish to re-generate the NN involved in the problem, run
+First, to re-generate the NN involved in the problem, run
 ```python main.py problem_name -3```
-However, this step is optional since all data related to the problems are already accessible in problems/problem_name/problem. Second, run the experiments from the following batch of commands (they could all be executed in parallel)
+Second, run all optimization methods via the following batch of commands (they could all be executed in parallel)
 ```
 python main.py problem_name 0   # runs the hybrid method
 python main.py problem_name 1   # runs the direct search method
