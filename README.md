@@ -38,7 +38,7 @@ problems/
 ### Off-the-shelves execution of the code
 To replicate our results without modifying anything in the code, proceed as follows. Decide which problem you wish to replicate. It could be either "barycentric_image_into_resnet", or "warcraft_map_counterfactual", or "bio_pinn". let us denote this string by problem_name. Then, run the command
 ```python main.py problem_name -3 -2 -1 0 1 2 3```
-Ths resulting runtime on an Intel Xeon Gold 6258R CPU, in single thread cadenced at~$2.70$GHz, is around seven hours for the problem "barycentric_image_into_resnet", two hours for the problem "warcraft_map_counterfactual", and ten minutes for the problem "bio_pinn". However, it is possible to parallelize some computation, as discussed below.
+Ths resulting runtime on an Intel Xeon Gold 6258R CPU, in single thread cadenced at 2.70 GHz, is around seven hours for the problem "barycentric_image_into_resnet", two hours for the problem "warcraft_map_counterfactual", and ten minutes for the problem "bio_pinn". However, it is possible to parallelize some computation, as discussed below.
 
 
 ### Parallelization of the experiments
