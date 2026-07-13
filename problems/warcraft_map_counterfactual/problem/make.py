@@ -143,35 +143,42 @@ def df(y, x_0:torch.tensor=z_initial, y_0:torch.tensor=cost_map_initial, scale:f
 # Constraint set F =
 #   {x such that
 #      ||x|| in [sqrt(n)+-1]
-#      cost_path(path_target, Phi(x)) <= cost_path(path_target, Phi(x_target)) + epsilon*(cost_path(path_target, Phi(x_0))-cost_path(path_target, Phi(x_target)))
+#      (1+epsilon) * cost_path(path_target, Phi(x)) <= cost_path(path_target, Phi(x_0))
 #   }
 
-def c_x(x, dr:float=1.0, scale:float=10.0):
+def c_x(x, dr:float=1.0):
     n = torch.tensor(x.shape[-1])
     norm = torch.linalg.norm(x)
     delta = ( norm-(torch.sqrt(n)-dr) ) * ( norm-(torch.sqrt(n)+dr) )
-    delta = delta.unsqueeze(0)/scale
+    delta = delta.unsqueeze(0)
     return delta
 
-def c_y(y, p_ora, p_ref, eps:float=1.0, scale:float=10.0, m:int=64):
+def c_y(y, p_ora, p_ref, eps:float=1.0, m:int=64):
     c_ora = torch.sum(p_ora*y[m:])
     c_ref = torch.sum(p_ref*y[m:])
     value = c_ora*(1+eps)- c_ref
-    value = value.unsqueeze(0)/scale
+    value = value.unsqueeze(0)
     return value
 
+def c(x):
+    y = Phi(x)
+    return torch.cat((c_x(x), c_y(y, opt_path_target, opt_path_initial)), dim=0)
 
+
+
+# Penalization of the constraints in the tilde reformulation, see f_tilde and df_tilde below
+weight_c = 1e1
 
 # y = Phi(x) and z = ReLU(c(x)), and yz = [y, z]
-def f_tilde(yz, m=208):
+def f_tilde(yz, m=208, weight_c=weight_c):
     y = yz[:m]
     z = yz[m:]
-    return (f(y) - torch.linalg.norm(z)**2).item()
+    return (f(y) - weight_c*torch.linalg.norm(z)**2).item()
 
-def df_tilde(yz, m=208):
+def df_tilde(yz, m=208, weight_c=weight_c):
     y = yz[:m]
     z = yz[m:]
-    return torch.cat((df(y),-2*z), dim=0)
+    return torch.cat((df(y),-2*weight_c*z), dim=0)
 
 
 
@@ -277,7 +284,7 @@ path_save = "/".join([path_root, "attack_analysis_points.pt"]); torch.save(x_lis
 
 #%% Plot of the shortest path in both images
 
-do_plots = False
+do_plots = True
 
 # Functions to ease the plots
 def convert_map_to_print(warcract_map): return warcract_map.numpy().transpose((1, 2, 0))
@@ -293,38 +300,34 @@ def convert_map_plus_path_to_print(warcract_map, opt_path, alpha=0.25):
             map_plus_path_array[x,y,:] = cell
     return map_plus_path_array
 
+def format_cost_for_title(cost_map, path, W_name, p_name):
+    cost = compute_path_cost(cost_map, path)
+    s = r"$\mathrm{costpath}(" + W_name + ", " + p_name + ") = " + f"{cost:.0f}".zfill(3) + "$"
+    return s
+
 # Plot both images and their associated shortest path
 if do_plots:
-    fig, ax = plt.subplots(ncols=7)
-    for i in range(7): ax[i].axis("off")
+    fig, ax = plt.subplots(ncols=4, nrows=2)
+    maps = [[map_initial_encoded, cost_map_initial],
+            [map_target_encoded,  cost_map_target ]]
 
-    ax[0].imshow(convert_map_to_print(map_initial_encoded.squeeze(0)))
-    ax[0].set_title(r"$\mathcal{W}_\mathrm{ini} \triangleq \mathrm{warcraft}(x_\mathrm{ini})$")
-    ax[1].imshow(convert_cost_to_print(cost_map_initial))
-    ax[1].set_title(r"$\mathrm{costmap}(\mathcal{W}_\mathrm{ini})$")
-    ax[2].imshow(convert_map_plus_path_to_print(map_initial_encoded.squeeze(0), opt_path_initial))
-    ax[2].set_title(r"optimal path $\mathrm{p}^*_\mathrm{ini}$")
-    ax[3].imshow(convert_map_plus_path_to_print(map_initial_encoded.squeeze(0), opt_path_target))
-    ax[3].set_title(r"alternative path $\mathrm{p}^\sharp$")
-    ax[4].imshow(convert_map_to_print(map_target_encoded.squeeze(0)))
-    ax[4].set_title(r"$\mathcal{W}_\mathrm{cfa} \triangleq \mathrm{warcraft}(x_\mathrm{cfa})$")
-    ax[5].imshow(convert_cost_to_print(cost_map_target))
-    ax[5].set_title(r"$\mathrm{costmap}(\mathcal{W}_\mathrm{cfa}))$")
-    ax[6].imshow(convert_map_plus_path_to_print(map_target_encoded.squeeze(0), opt_path_target))
-    ax[6].set_title(r"alternative path $\mathrm{p}^\sharp$")
+    for i in range(2):
+        for j in range(4): ax[i,j].axis("off")
+        ax[i,0].imshow(convert_map_to_print(maps[i][0].squeeze(0)))
+        ax[i,1].imshow(convert_cost_to_print(maps[i][1]))
+        ax[i,2].imshow(convert_map_plus_path_to_print(maps[i][0].squeeze(0), opt_path_initial))
+        ax[i,3].imshow(convert_map_plus_path_to_print(maps[i][0].squeeze(0), opt_path_target ))
 
-    # ax[0].imshow(convert_map_to_print(map_initial))
-    # ax[0].set_title("Real Warcraft map")
-    # ax[1].imshow(convert_cost_to_print(cost_map_initial))
-    # ax[1].set_title("Travel cost map")
-    # ax[2].imshow(convert_map_plus_path_to_print(map_initial, opt_path_initial))
-    # ax[2].set_title(r"Shortest path")
-    # ax[3].imshow(convert_map_to_print(map_target_encoded.squeeze(0)))
-    # ax[3].set_title("Generated map")
-    # ax[4].imshow(convert_cost_to_print(cost_map_target))
-    # ax[4].set_title("Travel cost map")
-    # ax[5].imshow(convert_map_plus_path_to_print(map_target_encoded.squeeze(0), opt_path_target))
-    # ax[5].set_title(r"Shortest path")
-    fig.set_size_inches(12,2)
-    fig.tight_layout()
+    ax[0,0].set_title(r"$\mathcal{W}_\mathrm{ini}$")
+    ax[0,1].set_title(r"$\mathrm{costmap}(\mathcal{W}_\mathrm{ini})$")
+    ax[0,2].set_title("path $\mathrm{p}^*_\mathrm{ini}$")
+    ax[0,3].set_title("path $\mathrm{p}^\sharp$")
+
+    ax[1,0].set_title(r"$\mathcal{W}_\mathrm{cfa}$")
+    ax[1,1].set_title(r"$\mathrm{costmap}(\mathcal{W}_\mathrm{cfa})$")
+    ax[1,2].set_title("path $\mathrm{p}^*_\mathrm{ini}$")
+    ax[1,3].set_title("path $\mathrm{p}^\sharp$")
+
+    fig.set_size_inches(8,4)
+    fig.subplots_adjust(left=0.01, right=0.99, bottom=0.01, top=0.93, wspace=0.1, hspace=0.2)
     fig.savefig("/".join([path_root, "example_maps.pdf"]))
