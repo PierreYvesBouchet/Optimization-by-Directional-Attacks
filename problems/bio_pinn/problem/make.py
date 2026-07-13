@@ -54,41 +54,44 @@ m = 6*N
 
 # Normalization of x into [0,1]^2, and if so, coefficients to rescale x to its normal scale
 # The rescaling coeffs have to bet set manually w.r.t. the c_x constraint, see below
-normalize_x = True
+normalize_x = False
+
+# Penalization of the constraints in the tilde reformulation, see f_tilde and df_tilde below
+weight_c = 1e1
 
 
 # Goal function to be maximized:
-#   f(y)   =   1/N  *  sum_{ti = t*i/N, i in range(1,N+1)} ME(ti) / (TG(ti)+DG(ti)+MG(ti))
+#   f(y)   =   1/N  *  sum_{ti = t*i/N, i in range(1,N+1)} ME(ti) / (TG(ti)+DG(ti)+MG(ti)+G(ti))
 def  f(y):
     N = int(len(y)/6)
-    return sum([y[6*i+4] / (y[6*i]+y[6*i+1]+y[6*i+2]) for i in range(N)]).item()/N
+    return sum([y[6*i+4] / (y[6*i]+y[6*i+1]+y[6*i+2]+y[6*i+3]) for i in range(N)]).item()/N
 
 def df(y):
     output = torch.zeros(y.shape)
     N = int(len(y)/6)
     for i in range(N):
-        output[6*i  ] = -1*y[6*i+4] / (y[6*i]+y[6*i+1]+y[6*i+2])**2
-        output[6*i+1] = -1*y[6*i+4] / (y[6*i]+y[6*i+1]+y[6*i+2])**2
-        output[6*i+2] = -1*y[6*i+4] / (y[6*i]+y[6*i+1]+y[6*i+2])**2
-        output[6*i+3] =  0
-        output[6*i+4] =           1 / (y[6*i]+y[6*i+1]+y[6*i+2])
+        output[6*i  ] = -1*y[6*i+4] / (y[6*i]+y[6*i+1]+y[6*i+2]+y[6*i+3])**2
+        output[6*i+1] = -1*y[6*i+4] / (y[6*i]+y[6*i+1]+y[6*i+2]+y[6*i+3])**2
+        output[6*i+2] = -1*y[6*i+4] / (y[6*i]+y[6*i+1]+y[6*i+2]+y[6*i+3])**2
+        output[6*i+3] = -1*y[6*i+4] / (y[6*i]+y[6*i+1]+y[6*i+2]+y[6*i+3])**2
+        output[6*i+4] =           1 / (y[6*i]+y[6*i+1]+y[6*i+2]+y[6*i+3])
         output[6*i+5] =  0
     return output/N
 
 # Components of the vector y that do not influence f
-inactive_subspace_f = tuple([6*i+3 for i in range(N)]+[6*i+5 for i in range(N)])
+inactive_subspace_f = tuple([6*i+5 for i in range(N)])
 
 
-# Constraints
+# Constraints (values hardcoded to the problem since making them variables break stuff in the NN saving)
 #    0 <= t <= 120
-#    0 <= Q <= 20
-#   Qt <= 500(Q*t = energy consumption [w.s = J])
+#    0 <= Q <= 12
+#   Qt <= 500 (Q*t = energy consumption [w.s = J])
 #    0 <= concentrations
 #   20 <= T <= 65
 
-x_rescaling = torch.tensor([120.0, 20.0]) # Must agree with first two constraints
+x_rescaling = torch.tensor([120.0, 12.0]) # Must agree with first two constraints
 
-def c_x(x, scale:float=1000, normalized_x:bool=normalize_x, x_rescaling:torch.Tensor=x_rescaling):
+def c_x(x, normalized_x:bool=normalize_x, x_rescaling:torch.Tensor=x_rescaling):
     x_copy = x.detach().clone()
     if normalized_x: x_copy = x_rescaling*x_copy
     A = torch.zeros(4,2)
@@ -96,13 +99,13 @@ def c_x(x, scale:float=1000, normalized_x:bool=normalize_x, x_rescaling:torch.Te
     A[1,0] =  1.0
     A[2,1] = -1.0
     A[3,1] =  1.0
-    b = torch.tensor([0.0, -120.0, 0.0, -20.0])
+    b = torch.tensor([0.0, -120.0, 0.0, -12.0])
     lin_ctrs = torch.matmul(A,x_copy)+b
     quad_ctrs = torch.prod(x_copy).unsqueeze(0)-500.0
     output = torch.cat((lin_ctrs, quad_ctrs), dim=0)
-    return scale*output
+    return output
 
-def c_y(y, scale:float=1000):
+def c_y(y):
     N = int(len(y)/6)
     output = torch.zeros(7*N)
     for i in range(N):
@@ -113,19 +116,24 @@ def c_y(y, scale:float=1000):
         output[7*i+4] = -y[6*i+4]
         output[7*i+5] = 20.0-y[6*i+5]
         output[7*i+6] = y[6*i+5]-65.0
-    return scale*output
+    return output
+
+def c(x):
+    y = Phi(x)
+    return torch.cat((c_x(x), c_y(y)), dim=0)
+
 
 
 # y = Phi(x) and z = ReLU(c(x)), and yz = [y, z]
-def  f_tilde(yz, m=m):
+def  f_tilde(yz, m=m, weight_c=weight_c):
     y = yz[:m]
     z = yz[m:]
-    return (f(y) - torch.linalg.norm(z)**2).item()
+    return (f(y) - weight_c*torch.linalg.norm(z)**2).item()
 
-def df_tilde(yz, m=m):
+def df_tilde(yz, m=m, weight_c=weight_c):
     y = yz[:m]
     z = yz[m:]
-    return torch.cat((df(y),-2*z), dim=0)
+    return torch.cat((df(y),-2*weight_c*z), dim=0)
 
 
 
@@ -212,21 +220,47 @@ path_save = "/".join([path_root, "Phi_tilde.pt"]); Phi_tilde_scripted.save(path_
 
 #%% Generation of the problem parameters
 
-# Starting point and radius
-x_0 = torch.tensor([40.0, 6.0])
+# Starting point
+x_0 = torch.tensor([ 40.0,  6.0])
 if normalize_x: x_0 = x_0 * 1/x_rescaling
-r_0 = 1E-3
+
+# starting radius
+r_0 = 1E0
 
 # Minimal/maximal radius for the poll step and the attack step
-r_dsm_min = 1E-6
-r_atk_min = 1E-6
-r_dsm_max = 1E-1
-r_atk_max = 1E0
+r_dsm_min = 1E-5
+r_atk_min = 1E-5
+r_dsm_max = 1E1
+r_atk_max = 1E1
+
+# Bruteforce grid search for x*, on the grid (t,Q)
+rerun_bruteforce_search = True
+if rerun_bruteforce_search or not os.path.exists("/".join([path_root, "x_star.pt"])):
+    (t_min, t_max, t_step) = (20.0, 120.0, 0.10)
+    (Q_min, Q_max, Q_step) = ( 4.0,  12.0, 0.01)
+    x_star = torch.zeros(2)
+    f_star = -float("inf")
+    print(f"Bruteforce search for x* over the grid (t,Q) in [{t_min},{t_max}]x[{Q_min},{Q_max}] with steps {t_step} and {Q_step}")
+    for t in torch.arange(t_min, t_max + t_step, t_step):
+        print(f"t = {t}")
+        for Q in torch.arange(Q_min, Q_max + Q_step, Q_step):
+            x = torch.tensor([t, Q])
+            y = Phi_tilde(x)
+            f_x = f_tilde(y)
+            if f_x > f_star:
+                f_star = f_x
+                x_star = x
+    print(f"Found x* = {x_star} with f(x*) = {f_star}")
+else:
+    x_star = torch.load("/".join([path_root, "x_star.pt"]))
+    f_star = f_tilde(Phi_tilde(x_star))
+    print(f"Loaded x* = {x_star} with f(x*) = {f_star}")
 
 # Saving the parameters
 parameters = [r_0, r_atk_min, r_atk_max, r_dsm_min, r_dsm_max]
 path_save = "/".join([path_root, "x_0.pt"]);        torch.save(x_0, path_save)
 path_save = "/".join([path_root, "parameters.pt"]); torch.save(parameters, path_save)
+path_save = "/".join([path_root, "x_star.pt"]);     torch.save((x_star, f_star), path_save)
 
 # List of points tested in preliminary study of attack algorithms
 x_list_attack_analysis = [x_0]
