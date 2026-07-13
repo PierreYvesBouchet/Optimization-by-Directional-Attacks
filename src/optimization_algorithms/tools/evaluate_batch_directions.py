@@ -11,7 +11,6 @@ import time
 
 
 #%% Evaluation of a batch of directions to identify ascent ones, if any
-# (t_stall is used to make calls to obj costly to run)
 
 def evaluate_batch_directions(x, directions_iterator, obj, t_stall = 0, opportunistic=True, skip=False):
     best = torch.zeros_like(x); o_best = obj(x)

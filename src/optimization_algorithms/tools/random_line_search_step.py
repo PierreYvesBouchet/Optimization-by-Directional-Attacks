@@ -12,10 +12,10 @@ from src.optimization_algorithms.tools.line_search_trial_directions import line_
 
 #%% Random line search
 
-def random_line_search_step(x, r, nb=1, r_mult_list=[2, 1, 1/2, 1/4]):
+def random_line_search_step(x, r, nb=1, r_mult_list=[2, 1, 1/2, 1/4], add_opposite=True):
     n = len(x)
     directions = []
     for i in range(nb):
         d = random_unit_direction(n)*r
-        directions += line_search_trial_directions(d, r_mult_list=r_mult_list)
+        directions += line_search_trial_directions(d, r_mult_list=r_mult_list, add_opposite=add_opposite)
     return iter(directions)

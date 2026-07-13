@@ -53,7 +53,7 @@ def optim_random_line_searches(f, df, Phi, x_0, r_0,
 
         else:
 
-            random_line_search_iterator = random_line_search_step(x, r, nb=2, r_mult_list=[1.1, 1, 1/1.1])
+            random_line_search_iterator = random_line_search_step(x, r, nb=2, r_mult_list=[1.2, 1, 1/1.2], add_opposite=False)
             dL, vL, tL = evaluate_batch_directions(x, random_line_search_iterator, obj, t_stall = t_stall)
 
         rL = torch.linalg.norm(dL, ord=float("inf"))
@@ -70,7 +70,7 @@ def optim_random_line_searches(f, df, Phi, x_0, r_0,
 
             nb_stall_iters += 1
             if nb_stall_iters > Phi.n+1:
-                r = max(r_min, r/1.3)
+                r = max(r_min, r/1.2)
             s = "failure"
             d_speculative = zero
 

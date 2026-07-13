@@ -19,7 +19,7 @@ from src.plot_functions.tools.convert_to_ms import convert_to_ms
 
 #%% Graph of best objective value versus total runtime in the "evaluate" block
 
-def graph_run_time(path_results_folder, list_data_history, scale_plots_to_best=False):
+def graph_run_time(path_results_folder, list_data_history, scale_plots_to_best=False, symlog_y_threshold=0):
 
     fig, ax = plt.subplots()
 
@@ -58,13 +58,11 @@ def graph_run_time(path_results_folder, list_data_history, scale_plots_to_best=F
     # Plots settings
     ax.set_xlim(0, T_max)
     ax.set_xscale("symlog")
-    if scale_plots_to_best:
-        ax.set_ylim(o_min-o_max, 0)
-        ax.set_yscale("symlog", linthresh=1E-10)
-    else:
-        ax.set_ylim(o_min, o_max)
+    if scale_plots_to_best: ax.set_ylim(o_min-o_max, 0)
+    else:                   ax.set_ylim(o_min, o_max)
+    if symlog_y_threshold > 0: ax.set_yscale("symlog", linthresh=symlog_y_threshold)
     ax.set_xlabel("runtime (ms)")
-    ax.set_ylabel("highest objective value found within the trial points")
+    ax.set_ylabel("best objective value found")
     # fig.legend(loc="upper center", ncol=len(list_data_history))
     ax.legend(loc="lower right")
     fig.subplots_adjust(left=0.09, right=0.98, bottom=0.15, top=0.98)

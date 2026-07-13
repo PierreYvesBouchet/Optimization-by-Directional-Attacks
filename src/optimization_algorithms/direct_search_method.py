@@ -25,6 +25,7 @@ def optim_direct_search_method(f, df, Phi, x_0, r_0,
                                nb_points_max = float("inf"),
                                runtime_max   = float("inf"),
                                k_max         = float("inf"),
+                               enable_search = False,
                                enable_speculative_search = False,
                                t_stall       = 0,
                                verbose_iterations = 0,
@@ -88,7 +89,7 @@ def optim_direct_search_method(f, df, Phi, x_0, r_0,
 
             else:
 
-                search_step_iterator = search_step(x, r_0*np.sqrt(searches_counter+1), r_max=r_max, light_search=True, empty_search=False)
+                search_step_iterator = search_step(x, r_0*np.sqrt(searches_counter+1), r_max=r_max, light_search=True, empty_search=not enable_search)
                 dS, vS, tS = evaluate_batch_directions(x, search_step_iterator, obj)
                 searches_counter += 1
 

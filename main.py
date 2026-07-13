@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-
-
 #%% Libraries import
 
 # General Python-related packages
@@ -26,8 +24,8 @@ from src.plot_functions.tools.load_history import load_history
 import matplotlib.pyplot as plt
 plt.close("all")
 
-# Fixing seed for reproductibility (both Torch and SciPy rely on NumPy seed)
-torch.manual_seed(0)
+# Fixing seed for reproducibility (both Torch and SciPy rely on NumPy seed)
+# torch.manual_seed(0)
 
 
 
@@ -40,29 +38,35 @@ run_optim_hybrid_method        = False
 run_optim_local_attacks        = False
 run_optim_direct_search_method = False
 run_optim_random_line_searches = False
+run_optim_bfgs                 = False
 do_plots                       = False
 run_attack_analysis            = False
 rebuild_problem                = False
+nb_repeats                     = 3 # number of times to repeat the whole optimization process (for stochastic algos)
 
 # Block of code to collect this script's parameters from IDE or from terminal
-is_run_from_ide = False
+is_run_from_ide = True
 if is_run_from_ide:
-    problem_name                   = "warcraft_map_counterfactual"
+    problem_name                   = "warcraft_map_counterfactual" # "bio_pinn" # "barycentric_image_into_resnet"
     run_optim_hybrid_method        = True
     run_optim_direct_search_method = True
     run_optim_local_attacks        = True
     run_optim_random_line_searches = True
-    run_attack_analysis            = True
+    run_optim_bfgs                 = True
+    run_attack_analysis            = False
     do_plots                       = True
-    rebuild_problem                = True
+    rebuild_problem                = False
+    nb_repeats                     = 1
 else:
     problem_name = sys.argv[1]
-    for arg in sys.argv[2:]:
+    nb_repeats = int(sys.argv[2])
+    for arg in sys.argv[3:]:
         arg = int(arg)
         if arg ==  0: run_optim_hybrid_method        = True
         if arg ==  1: run_optim_direct_search_method = True
         if arg ==  2: run_optim_local_attacks        = True
         if arg ==  3: run_optim_random_line_searches = True
+        if arg ==  4: run_optim_bfgs                 = True
         if arg == -1: do_plots                       = True
         if arg == -2: run_attack_analysis            = True
         if arg == -3: rebuild_problem                = True
@@ -75,6 +79,9 @@ path_folder_problem_results    = "/".join([path_folder_problem,                "
 sys.path.append(path_folder_problem)
 sys.path.append(path_folder_problem_definition)
 sys.path.append(path_folder_problem_results)
+
+# Determines whether the plots should be generated in symlog scale
+symlog_threshold = (-1E-10 if problem_name == "bio_pinn" else 1E-10)
 
 
 
@@ -98,11 +105,11 @@ if rebuild_problem:
 
 # Imports the goal functions f and f_tilde, and their gradients df and df_tilde, which must be defined within path_folder_problem/make.py
 if use_tilde_reformulation:
-    from make import f_tilde as f, df_tilde as df
+    from make import f_tilde as f, df_tilde as df, c
     Phi_tilde_path = "/".join([path_folder_problem_definition, "Phi_tilde.pt"])
     Phi = torch.jit.load(Phi_tilde_path)
 else:
-    raise ValueError("Error: algorithm solving the non-refomulated problem not implemented. Set use_tilde_reformulation = True.")
+    raise ValueError("Error: algorithm solving the non-reformulated problem not implemented. Set use_tilde_reformulation = True.")
     # from make import f, df, c
     # Phi_path = "/".join([path_folder_problem_definition, "Phi.pt"])
     # Phi = torch.jit.load(Phi_path)
@@ -116,12 +123,13 @@ for param in Phi.parameters(): param.requires_grad = False
 #%% Import of others problem parameters
 
 # Force skipping all runs
-force_runs_false = False
+force_runs_false = True
 if force_runs_false:
     run_optim_hybrid_method        = False
     run_optim_random_line_searches = False
     run_optim_local_attacks        = False
     run_optim_direct_search_method = False
+    run_optim_bfgs                 = False
     run_attack_analysis            = False
 
 # Imports the starting point
@@ -134,8 +142,8 @@ parameters = torch.load(path_parameters, weights_only=True)
 
 # Imports the global solution, if any
 path_x_star = "/".join([path_folder_problem_definition, "x_star.pt"])
-try:    x_star = torch.load(path_x_star, weights_only=True)
-except: x_star = None
+try:    (x_star, f_star) = torch.load(path_x_star, weights_only=True)
+except: (x_star, f_star) = (None, None)
 
 # Parses the parameters from the file
 r_0       = parameters[0] # starting radius for either the attack step and the dsm
@@ -146,7 +154,7 @@ r_dsm_max = parameters[4] # maximal radius for dsm step (if r_dsm grows above, i
 global_verbosity = 1 # If in IN^*, overrides each optim algo's default verbosity
 
 # Values related to stopping criteria checked at the end of each iteration
-eval_max = 2E4 # alternatively, 1E3*(Phi.n+1) is a rule of thumb from DFO
+eval_max = 5E4 # alternatively, 1E3*(Phi.n+1) is a rule of thumb from DFO
 k_max = float("inf")
 t_max = 6*60*60 # seconds (currently, only runtime(evaluate_batch_directions) is recorded)
 
@@ -160,7 +168,7 @@ if try_create_result_folder:
     make_whole_path = False # Hardcoded to False since it could be dangerous otherwise
     if make_whole_path: # Creates the whole path, if not already existing
         os.makedirs(path_folder_problem_results, exist_ok=False)
-    else: # If only path_folder_results's leaf doesn't exists, it is created
+    else: # If only path_folder_results's leaf doesn't exist, it is created
         try:    os.mkdir(path_folder_problem_results)
         except: pass
 
@@ -181,6 +189,7 @@ default_dict = {"do_run":    False, # To override with appropriate boolean
                 "eval_max":  eval_max,
                 "t_max":     t_max,
                 "k_max":     k_max,
+                "search":    False,
                 "speculative": False,
                 }
 
@@ -200,6 +209,11 @@ dict_optim_direct_search_method = default_dict.copy()
 dict_optim_direct_search_method["do_run"]  = run_optim_direct_search_method
 dict_optim_direct_search_method["name"]   += "dsm"
 
+# BFGS algo from PyTorch
+dict_optim_bfgs = default_dict.copy()
+dict_optim_bfgs["do_run"]  = run_optim_bfgs
+dict_optim_bfgs["name"]   += "bfgs"
+
 # Hybrid Attack-cDSM algorithm
 dict_optim_hybrid_method = default_dict.copy()
 dict_optim_hybrid_method["do_run"]   = run_optim_hybrid_method
@@ -210,12 +224,17 @@ dict_optim_hybrid_method["name"]    += "hybrid"
 
 #%% Run of all optimization algorithms
 
-optimization_runner(f, df, Phi, x_0, path_folder_problem_results,
-                    dict_optim_random_line_searches,
-                    dict_optim_local_attacks,
-                    dict_optim_direct_search_method,
-                    dict_optim_hybrid_method,
-                    )
+for i in range(nb_repeats):
+    print("run {:d}/{:d}".format(i+1, nb_repeats))
+    optimization_runner(f, df, Phi, x_0, path_folder_problem_results,
+                        dict_optim_random_line_searches,
+                        dict_optim_local_attacks,
+                        dict_optim_direct_search_method,
+                        dict_optim_bfgs,
+                        dict_optim_hybrid_method,
+                        appendix_name_to_save="_run"+str(i)
+                        )
+    print("\n\n\n")
 
 
 
@@ -230,8 +249,8 @@ if run_attack_analysis:
 
     take_points_from_hybrid_overriden = False
     try:
-        nb_pts_max = 200
-        list_points = [h[0] for h in load_history("optim_hybrid.pt", path_folder_problem_results)[1:]]
+        nb_pts_max = 201
+        list_points = [h[0] for h in load_history("optim_hybrid_run0.pt", path_folder_problem_results)[1:]]
         nb_pts = len(list_points)
         if nb_pts > nb_pts_max:
             list_points = [list_points[int(i*nb_pts/nb_pts_max)] for i in range(nb_pts_max)] # Selects nb_pts_max points uniformly in the list
@@ -255,7 +274,7 @@ if run_attack_analysis:
 
 #%% Plots of all graphs, if asked to
 
-if do_plots: plots_maker(path_folder_problem_results)
+if do_plots: plots_maker(path_folder_problem_results, symlog_threshold=symlog_threshold, nb_repeats=nb_repeats, theoretical_opt_value=f_star)
 
 
 
@@ -263,14 +282,24 @@ if do_plots: plots_maker(path_folder_problem_results)
 
 if is_run_from_ide:
 
-    try:    history_hybrid_method        = load_history("optim_hybrid.pt",        path_folder_problem_results)
+    try:    history_hybrid_method        = load_history("optim_hybrid_run0.pt",        path_folder_problem_results)
     except: history_hybrid_method        = None
 
-    try:    history_local_attacks        = load_history("optim_attacks.pt",       path_folder_problem_results)
+    try:    history_local_attacks        = load_history("optim_attacks_run0.pt",       path_folder_problem_results)
     except: history_local_attacks        = None
 
-    try:    history_direct_search_method = load_history("optim_dsm.pt",           path_folder_problem_results)
+    try:    history_direct_search_method = load_history("optim_dsm_run0.pt",           path_folder_problem_results)
     except: history_direct_search_method = None
 
-    try:    history_random_line_searches = load_history("optim_line_searches.pt", path_folder_problem_results)
+    try:    history_random_line_searches = load_history("optim_line_searches_run0.pt", path_folder_problem_results)
     except: history_random_line_searches = None
+
+    try:    history_bfgs                 = load_history("optim_bfgs_run0.pt",          path_folder_problem_results)
+    except: history_bfgs                 = None
+
+    print("Infeasibility of the last point of each algo's history:")
+    if history_hybrid_method        is not None: print("\tHybrid method:        ", max(c(history_hybrid_method[-1][0])))
+    if history_local_attacks        is not None: print("\tLocal attacks:        ", max(c(history_local_attacks[-1][0])))
+    if history_direct_search_method is not None: print("\tDirect search method: ", max(c(history_direct_search_method[-1][0])))
+    if history_random_line_searches is not None: print("\tRandom line searches: ", max(c(history_random_line_searches[-1][0])))
+    if history_bfgs                 is not None: print("\tBFGS:                 ", max(c(history_bfgs[-1][0])))

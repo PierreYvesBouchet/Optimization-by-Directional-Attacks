@@ -18,7 +18,7 @@ from src.plot_functions.tools.round_above import round_above
 
 #%% Best objective value versus number of points evaluated
 
-def graph_attack_analysis(folder_path, list_data_history, nb_x_max=float("inf"), yscale_symlog=False):
+def graph_attack_analysis(folder_path, list_data_history, nb_x_max=float("inf"), symlog_y_threshold=0):
 
 
 
@@ -53,8 +53,8 @@ def graph_attack_analysis(folder_path, list_data_history, nb_x_max=float("inf"),
     o_max = np.max(O)
     ax1.set_xlim(-0.5, nb_x-1+0.5)
     ax1.set_ylim(o_min, o_max)
-    if yscale_symlog: ax1.set_yscale("symlog", linthresh=1E-10)
-    ax1.set_ylabel("$f(\\Phi(x^j))$")
+    if symlog_y_threshold > 0: ax1.set_yscale("symlog", linthresh=symlog_y_threshold)
+    ax1.set_ylabel("$f(\\Phi(x^{k(j)}))$")
 
     t_max = np.max(T)
     ax2.set_ylim(0, round_above(t_max, 0.1))
@@ -95,10 +95,10 @@ def graph_attack_analysis(folder_path, list_data_history, nb_x_max=float("inf"),
 
             xticks_values = [i for i in range(0, nb_x, 10)]
             xticks_minor_values = [i for i in range(nb_x)]
-            ax.set_xticks(ticks=xticks_values); ax.set_xticks(ticks=xticks_minor_values, minor=True)
+            ax.set_xticks(ticks=xticks_values); ax.set_xticks(ticks=xticks_minor_values, minor=True); ax.tick_params(axis="x", pad=0)
             ax.set_yticks(ticks=[i for i in range(nb_r)], labels=["{:1.0E}".format(r) for r in R])
 
-            ax.text(nb_x-1+1.5, (nb_r-1+0.5)/2, label, rotation=90, ha='left', va='center')
+            ax.text(nb_x-1 + 2, (nb_r-1+0.5)/2, label, rotation=90, ha='left', va='center')
             # ax.set_title(label, rotation=-90, position=(1, 0), ha='left', va='center')
 
     axs[-1].set_xlabel("Point index $j$")

@@ -25,6 +25,7 @@ def optim_local_attacks(f, df, Phi, x_0, r_0,
                         k_max         = float("inf"),
                         lib           = "default",
                         algo          = "PGD",
+                        enable_search = False,
                         enable_speculative_search = False,
                         t_stall       = 0,
                         verbose_iterations = 0,
@@ -71,7 +72,7 @@ def optim_local_attacks(f, df, Phi, x_0, r_0,
         else:
 
             local_attack_step_iterator = local_attack_step(Phi, x, df(Phi(x)), r, r_min=r_min, r_max=r_max,
-                                                           r_mult_list = [1.1, 1],
+                                                           r_mult_list = [1.2, 1],
                                                            lib=lib, algo=algo)
             dA, vA, tA = evaluate_batch_directions(x, local_attack_step_iterator, obj, opportunistic=True)
 
@@ -88,7 +89,7 @@ def optim_local_attacks(f, df, Phi, x_0, r_0,
 
             else:
 
-                search_step_iterator = search_step(x, r_0*np.sqrt(searches_counter), r_max=r_max, empty_search=True, light_search=True)
+                search_step_iterator = search_step(x, r_0*np.sqrt(searches_counter), r_max=r_max, empty_search=not enable_search, light_search=True)
                 dS, vS, tS = evaluate_batch_directions(x, search_step_iterator, obj)
                 searches_counter += 1
 
