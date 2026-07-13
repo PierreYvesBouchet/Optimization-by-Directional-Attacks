@@ -105,16 +105,19 @@ def c(x): return (x-10.0)*(x+10.0)
 
 
 
-# y = Phi(x) and z = ReLU(c(x)), and yz = [y, z]
-def f_tilde(yz, m=m):
-    y = yz[:m]
-    z = yz[m:]
-    return (f(y) - torch.linalg.norm(z)**2).item()
+# Penalization of the constraints in the tilde reformulation, see f_tilde and df_tilde below
+weight_c = 1e1
 
-def df_tilde(yz, m=m):
+# y = Phi(x) and z = ReLU(c(x)), and yz = [y, z]
+def f_tilde(yz, m=m, weight_c=weight_c):
     y = yz[:m]
     z = yz[m:]
-    return torch.cat((df(y),-2*z), dim=0)
+    return (f(y) - weight_c*torch.linalg.norm(z)**2).item()
+
+def df_tilde(yz, m=m, weight_c=weight_c):
+    y = yz[:m]
+    z = yz[m:]
+    return torch.cat((df(y),-2*weight_c*z), dim=0)
 
 
 
@@ -206,8 +209,10 @@ path_save = "/".join([path_root, "Phi_tilde.pt"]); Phi_tilde_scripted.save(path_
 # Saves the ResNet output of the reference image
 path_save = "/".join([path_root, "image_target_resnet_output.pt"]); torch.save(image_target_resnet_output, path_save)
 
-# Starting point and radius
+# Starting point
 x_0 = torch.zeros(Phi.n)
+
+# Starting radius
 r_0 = 1E0
 
 # Minimal/maximal radius for the poll step and the attack step
@@ -218,12 +223,13 @@ r_atk_max = 1E1
 
 # Global solution x_star, since it is known in this problem
 x_star = torch.ones(Phi.n)*-10; x_star[0] = 10
+f_star = 0.0 # Actually f(Phi(x_star)), but this harmless hack (difference < 1e-10) makes the plots smoothers
 
 # Saving the parameters
 parameters = [r_0, r_atk_min, r_atk_max, r_dsm_min, r_dsm_max]
 path_save = "/".join([path_root, "x_0.pt"]);        torch.save(x_0, path_save)
 path_save = "/".join([path_root, "parameters.pt"]); torch.save(parameters, path_save)
-path_save = "/".join([path_root, "x_star.pt"]);     torch.save(x_star, path_save)
+path_save = "/".join([path_root, "x_star.pt"]);     torch.save((x_star, f_star), path_save)
 
 # List of points tested in preliminary study of attack algorithms
 x_list_attack_analysis = [x_0, x_star]
