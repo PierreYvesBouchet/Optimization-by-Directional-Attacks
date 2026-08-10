@@ -16,7 +16,7 @@ The project is written in Python 3.12.2. All required Python packages are listed
 ### Additional installation related to external datasets
 
 #### ResNet18 problem
-To run the proof-of-concept problem based on ResNet18, download the dataset of images first. It is available at[this link](https://github.com/EliSchwartz/imagenet-sample-images). Then, set the 1000 images it contains at the location
+To run the proof-of-concept problem based on ResNet18, download the dataset of images first. It is available at [this link](https://github.com/EliSchwartz/imagenet-sample-images). Then, set the 1000 images it contains at the location
 ```
 problems/
 	barycentric_image_into_resnet/
