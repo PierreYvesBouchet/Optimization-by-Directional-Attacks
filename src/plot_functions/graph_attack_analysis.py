@@ -14,6 +14,9 @@ import numpy as np
 # Handmade function useful for plotting
 from src.plot_functions.tools.round_above import round_above
 
+# Sufficient increase function
+from src.optimization_algorithms.tools.sufficient_increase import sufficient_increase
+
 
 
 #%% Best objective value versus number of points evaluated
@@ -23,7 +26,6 @@ def graph_attack_analysis(folder_path, list_data_history, nb_x_max=float("inf"),
 
 
     fig, axs = plt.subplots(nrows=1+len(list_data_history), sharex=True)
-    fig.subplots_adjust(hspace=0.05)
 
 
 
@@ -34,6 +36,7 @@ def graph_attack_analysis(folder_path, list_data_history, nb_x_max=float("inf"),
 
     ax1 = axs[0]
     ax2 = ax1.twinx()
+    t_max = 0
 
     for i in range(len(list_data_history)):
 
@@ -41,6 +44,7 @@ def graph_attack_analysis(folder_path, list_data_history, nb_x_max=float("inf"),
         X, R, O, S, T, A = history[1]
         nb_x = min(len(X), nb_x_max)
         nb_r = len(R)
+        t_max = max(t_max, np.max(T))
 
         ax1.plot([i_x for i_x in range(nb_x)], [O[i_x] for i_x in range(nb_x)], color="black")
         # for i_x in range(nb_x):
@@ -54,9 +58,8 @@ def graph_attack_analysis(folder_path, list_data_history, nb_x_max=float("inf"),
     ax1.set_xlim(-0.5, nb_x-1+0.5)
     ax1.set_ylim(o_min, o_max)
     if symlog_y_threshold > 0: ax1.set_yscale("symlog", linthresh=symlog_y_threshold)
-    ax1.set_ylabel("$f(\\Phi(x^{k(j)}))$")
+    ax1.set_ylabel("$\\widetilde{f}(\\widtilde{\\Phi}(x^{k(j)}))$")
 
-    t_max = np.max(T)
     ax2.set_ylim(0, round_above(t_max, 0.1))
     ax2.set_ylabel("t [s]")
 
@@ -78,9 +81,16 @@ def graph_attack_analysis(folder_path, list_data_history, nb_x_max=float("inf"),
             for i_r in range(nb_r):
                 for i_x in range(nb_x):
                     s = S[i_x][i_r]
-                    if s: marker = "o"; alpha = 1.0; color_success = color
-                    else: marker = "x"; alpha = 0.5; color_success = "dark"+color
-                    ax.plot(i_x, i_r, marker=marker, color=color_success, markersize=3, alpha=alpha)
+                    o = O[i_x]
+                    g = A[i_x][i_r]
+                    r = R[i_r]
+                    # suff_incr = sufficient_increase(g, o, r)
+                    suff_incr = (g >= o + (o_max-o)/100)
+                    if s:
+                        if suff_incr: marker = "o"; alpha = 1.0; color_success = color
+                        else        : marker = "x"; alpha = 0.5; color_success = color
+                    # else: marker = "x"; alpha = 0.25; color_success = "dark"+color
+                        ax.plot(i_x, i_r, marker=marker, color=color_success, markersize=3, alpha=alpha)
 
             ax.set_ylabel("r")
             ax.set_xlim(-0.5, nb_x-1+0.5)
@@ -105,6 +115,6 @@ def graph_attack_analysis(folder_path, list_data_history, nb_x_max=float("inf"),
 
     width = 12#max(12, 12*nb_x/100)
     fig.set_size_inches((width, 2*(1+len(list_data_history))+0.5))
-    fig.subplots_adjust(left=0.07, right=0.95, bottom=0.07, top=0.99, hspace=0.05)
+    fig.subplots_adjust(left=0.07, right=0.95, bottom=0.05, top=0.99, hspace=0.05)
 
     fig.savefig("/".join([folder_path, "plot_attack_analysis.pdf"]))

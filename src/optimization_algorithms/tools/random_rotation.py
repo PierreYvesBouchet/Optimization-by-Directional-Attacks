@@ -13,15 +13,15 @@ import random
 
 #%% Rotate a vector by a random angle of at most theta_max
 
-def random_rotation(v, theta_max=np.pi/4):
+def random_rotation(v, theta_max=np.pi/4, rng=None):
     n = len(v)
     R = torch.zeros(n,n)
-    I = [i for i in range(n)]
-    random.shuffle(I)
+    if rng is None: rng = torch.Generator()
+    I = torch.randperm(n, generator=rng).tolist()
     for i in range(int(n/2)):
-        theta = theta_max*(-1+2*random.random())
-        R[i,   i  ] =    np.cos(theta)
-        R[i,   i+1] =    np.sin(theta)
-        R[i+1, i  ] = -1*np.sin(theta)
-        R[i+1, i+1] =    np.cos(theta)
+        theta = theta_max*(-1+2*torch.rand(1, generator=rng).item())
+        R[I[i],   I[i]  ] =    np.cos(theta)
+        R[I[i],   I[i+1]] =    np.sin(theta)
+        R[I[i+1], I[i]  ] = -1*np.sin(theta)
+        R[I[i+1], I[i+1]] =    np.cos(theta)
     return torch.matmul(R, v)

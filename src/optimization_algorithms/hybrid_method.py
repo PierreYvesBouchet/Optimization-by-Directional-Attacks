@@ -7,6 +7,8 @@
 
 import torch
 import numpy as np
+import time
+
 from src.optimization_algorithms.tools.fill_history              import fill_history
 from src.optimization_algorithms.tools.evaluate_batch_directions import evaluate_batch_directions
 from src.optimization_algorithms.tools.sufficient_increase       import sufficient_increase
@@ -28,147 +30,108 @@ def optim_hybrid_method(f, df, Phi, x_0, r_0,
                         nb_points_max = float("inf"),
                         runtime_max   = float("inf"),
                         k_max         = float("inf"),
-                        lib           = "default",
-                        algo          = "FGSM",
+                        algo          = "FFGSM",
                         enable_search = False,
-                        enable_speculative_search = False,
                         t_stall       = 0,
                         verbose_iterations = 0,
+                        seed          = 0
                         ):
 
+    rng = torch.Generator()
+    rng.manual_seed(seed)
+    Phi.nb_forward_calls = 0
+
     obj = lambda x: f(Phi(x))
-    if verbose_iterations > 0: print("optim_hybrid_method from obj value = {:>+9.3E}".format(obj(x_0)))
 
     history = fill_history([], "x", "f(Phi(x))", "k", "runtime", "cache size", "iteration status", additional=["attack radius", "poll radius", "attack gain"], is_header=True)
-    v_sum = 0
     t_sum = 0
     converged = False
-
-    zero = torch.zeros_like(x_0)
 
     x = x_0.clone().detach(); o = obj(x); k = 0; t = 0; v = 0; r_atk = r_0; r_dsm = r_0; s = "init"; attack_gain = 0
     history = fill_history(history, x, o, k, t, v, s, additional=[r_atk, r_dsm, attack_gain])
     searches_counter = 0
-    d_speculative = zero
+
+    if verbose_iterations > 0: print("optim_hybrid_method("+algo+") from obj value = {:>+9.3E} with seed {}".format(o, seed))
 
     while not(converged):
 
         k += 1
+        v_sum = Phi.nb_forward_calls
+        t_in = time.perf_counter()
+        y = Phi(x)
 
-        if enable_speculative_search and not(torch.equal(d_speculative, zero)):
-            altered_line_search_iterator = altered_line_search_step(x, d_speculative)
-            dL, vL, tL = evaluate_batch_directions(x, altered_line_search_iterator, obj, t_stall = t_stall)
-        else:
-            dL = zero
-            vL = 0
-            tL = 0
+        local_attack_step_iterator = local_attack_step(Phi, x, y, df(y), r_atk, r_min = r_atk_min, r_max = r_atk_max, r_mult_list = [1.2, 1, 0.8], algo=algo, rng=rng)
+        tA, oA = evaluate_batch_directions(x, o, local_attack_step_iterator, obj)
+        rA = torch.linalg.norm(tA-x, ord=float("inf"))
+        attack_gain += max(oA - o, 0)
 
-        if obj(x+dL) > obj(x):
+        if sufficient_increase(oA, o, rA, tau=1E-2, force_false=True):
 
-            x += dL
-            r_atk *= 1
-            r_dsm *= 1
-            tA = 0
-            tS = 0
-            tC = 0
-            tP = 0
-            vA = 0
-            vS = 0
-            vC = 0
-            vP = 0
-            s = "speculative"
-            d_speculative = dL
+            x = tA
+            o = oA
+            r_dsm = min(r_dsm_max, 1.3*r_dsm)
+            r_atk = min(r_atk_max, max(r_atk_min, r_atk*1.3))
+            s = "attack+skipped"
 
         else:
 
-            local_attack_step_iterator = local_attack_step(Phi, x, df(Phi(x)), r_atk, r_min = r_atk_min, r_max = r_atk_max,
-                                                           r_mult_list = [1],
-                                                           lib=lib, algo=algo)
-            dA, vA, tA = evaluate_batch_directions(x, local_attack_step_iterator, obj)
+            if oA > o:
 
-            rA = torch.linalg.norm(dA, ord=float("inf"))
-            attack_gain += max(obj(x+dA) - obj(x), 0)
-            if sufficient_increase(obj(x+dA), obj(x), rA, tau=1E-3):
-
-                x += dA
-                r_dsm = (r_dsm if r_dsm > r_dsm_min else 2*r_dsm)
+                x = tA
+                o = oA
+                r_dsm = min(r_dsm_max, 1.1*r_dsm)
                 r_atk = min(r_atk_max, max(r_atk_min, r_atk*1.3))
-                tS = 0
-                tC = 0
-                tP = 0
-                vS = 0
-                vC = 0
-                vP = 0
-                s = "attack+skipped"
-                d_speculative = dA
+                s = "attack+"
 
             else:
 
-                if obj(x+dA) > obj(x):
+                r_dsm = r_dsm
+                r_atk = max(r_atk_min, r_atk/1.3)
+                s = "failure+"
 
-                    x += dA
-                    r_atk = min(r_atk_max, max(r_atk_min, r_atk*1.1))
-                    s = "attack+"
-                    d_speculative = dA
+            covering_step_iterator = covering_step(x, r_covering = r_0, rng=rng)
+            tC, oC = evaluate_batch_directions(x, o, covering_step_iterator, obj)
+
+            if oC > o:
+
+                x = tC
+                o = oC
+                r_dsm = r_dsm
+                s += "covering"
+
+            else:
+
+                search_step_iterator = search_step(x, r_0*np.sqrt(searches_counter+1), r_max=r_dsm_max, light_search=True, empty_search=not enable_search, rng=rng)
+                tS, oS = evaluate_batch_directions(x, o, search_step_iterator, obj, skip=(r_dsm <= r_dsm_min))
+                searches_counter += 1
+
+                if oS > o:
+
+                    x = tS
+                    o = oS
+                    r_dsm = min(r_dsm_max, 2*r_dsm)
+                    s += "search"
 
                 else:
 
-                    r_atk = max(r_atk_min, r_atk/1.3)
-                    s = "failure+"
+                    poll_step_iterator = poll_step(x, r_dsm, poll_type="n+1", rng=rng)
+                    tP, oP = evaluate_batch_directions(x, o, poll_step_iterator, obj, skip=(r_dsm <= r_dsm_min))
 
-                covering_step_iterator = covering_step(x, r_covering = r_0)
-                dC, vC, tC = evaluate_batch_directions(x, covering_step_iterator, obj)
-
-                if obj(x+dC) > obj(x):
-
-                    x += dC
-                    r_dsm = r_dsm
-                    tS = 0
-                    tP = 0
-                    vS = 0
-                    vP = 0
-                    s += "covering"
-                    d_speculative = dC
-
-                else:
-
-                    search_step_iterator = search_step(x, r_0*np.sqrt(searches_counter+1), r_max=r_dsm_max, light_search=True, empty_search=not enable_search)
-                    dS, vS, tS = evaluate_batch_directions(x, search_step_iterator, obj, skip=(r_dsm <= r_dsm_min))
-                    searches_counter += 1
-
-                    if obj(x+dS) > obj(x):
-
-                        x += dS
+                    if oP > o:
+                        x = tP
+                        o = oP
                         r_dsm = min(r_dsm_max, 2*r_dsm)
-                        tP = 0
-                        vP = 0
-                        s += "search"
-                        d_speculative = dS
-
+                        s += "poll"
                     else:
+                        r_dsm = max(r_dsm_min, r_dsm/2)
+                        s += "failure"
 
-                        poll_step_iterator = poll_step(x, r_dsm, poll_type="n+1")
-                        dP, vP, tP = evaluate_batch_directions(x, poll_step_iterator, obj, skip=(r_dsm <= r_dsm_min))
-
-                        if obj(x+dP) > obj(x):
-                            x += dP
-                            r_dsm = min(r_dsm_max, 2*r_dsm)
-                            s += "poll"
-                            d_speculative = dP
-                        else:
-                            r_dsm = max(r_dsm_min, r_dsm/2)
-                            s += "failure"
-                            d_speculative = zero
-
-        o = obj(x)
-        t = tL+tA+tC+tS+tP; t_sum += t
-        v = vL+vA+vC+vS+vP; v_sum += v
-        history = fill_history(history, x, o, k, t, v, s, additional=[r_atk, r_dsm])
-
-        # print(vA,vC,vS,vP)
+        t_out = time.perf_counter(); t = t_out-t_in; t_sum += t
+        v = Phi.nb_forward_calls - v_sum; v_sum += v
+        history = fill_history(history, x, o, k, t, v, s, additional=[r_atk, r_dsm, attack_gain])
 
         if verbose_iterations > 0 and k % verbose_iterations == 0:
-            print("k = {:>4d}, obj = {:>+9.3E}, r_atk = {:>7.1E}, r_dsm = {:>7.1E}, v = {:>8d}, s = {:s}".format(k, o, r_atk, r_dsm, v_sum, s))
+            print("k = {:>4d}, obj = {:>+9.3E}, r_atk = {:>7.1E}, r_dsm = {:>7.1E}, v = {:>8d}, t = {:>6.2f}, s = {:s}".format(k, o, r_atk, r_dsm, v_sum, t_sum, s))
 
         if k >= k_max:
             converged = True
@@ -191,7 +154,7 @@ def optim_hybrid_method(f, df, Phi, x_0, r_0,
                 print("stopping criterion \"excessive runtime\" triggered")
 
     if verbose_iterations > 0:
-        print("k = {:>4d}, obj = {:>+9.3E}, r_atk = {:>7.1E}, r_dsm = {:>7.1E}, v = {:>8d}, s = {:s}".format(k, o, r_atk, r_dsm, v_sum, s))
+        print("k = {:>4d}, obj = {:>+9.3E}, r_atk = {:>7.1E}, r_dsm = {:>7.1E}, v = {:>8d}, t = {:>6.2f}, s = {:s}".format(k, o, r_atk, r_dsm, v_sum, t_sum, s))
         print()
 
     return history

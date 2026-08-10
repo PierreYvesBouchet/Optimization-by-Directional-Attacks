@@ -19,7 +19,7 @@ from src.plot_functions.tools.round_above import round_above
 #%% Graph of best objective value versus number of points evaluated
 
 # Expects as input labels of the form $\\mathbb{M}_{\\mathrm{name}}$
-def map_label_to_simpler_label(label): return label.split("_")[1].replace("{\\mathrm{", "").replace("}}$", "")
+def map_label_to_simpler_label(label): return label.split("_")[1].split("^")[0].replace("{\\mathrm{", "").replace("}}", "").replace("$", "")
 
 # For each algorithm, list of all possible end-of-iteration statuses
 labels = {}
@@ -27,6 +27,7 @@ labels["brls"] = ["failure", "linesearch"]
 labels["atck"] = ["failure", "attack", "search"]
 labels["cdsm"] = ["failure", "poll", "search", "covering"]
 labels["hybr"] = ["failure+failure", "failure+poll", "failure+search", "failure+covering", "attack+failure", "attack+poll", "attack+search", "attack+covering", "attack+skipped"]
+labels["back"] = ["failure", "backprop"]
 labels["bfgs"] = ["failure", "linesearch"]
 
 remove_search_from_labels = True
@@ -35,6 +36,15 @@ if remove_search_from_labels:
     labels["atck"] = [s for s in labels["atck"] if "search" not in s]
     labels["cdsm"] = [s for s in labels["cdsm"] if "search" not in s]
     labels["hybr"] = [s for s in labels["hybr"] if "search" not in s]
+
+remove_skipped_from_labels = True
+if remove_skipped_from_labels:
+    # labels["brls"] not changed; the brls algo has no skipped step
+    # labels["atck"] not changed; the atck algo has no skipped step
+    # labels["cdsm"] not changed; the cdsm algo has no skipped step
+    labels["hybr"] = [s for s in labels["hybr"] if "skipped" not in s]
+    # labels["back"] not changed; the back algo has no skipped step
+    # labels["bfgs"] not changed; the bfgs algo has no skipped step
 
 
 
@@ -46,7 +56,7 @@ def graph_iterations(path_results_folder, list_data_history, K_max_upper_bound=1
     K_max = 0
 
     # First loop to get K_max
-    for history, _, _ in list_data_history:
+    for history, _, _, _ in list_data_history:
         for iter_k in history[2:]: # Reject 0st element because = header and 1st because = initialization
             k = iter_k[2]
             K_max = max(K_max, k)
@@ -64,7 +74,7 @@ def graph_iterations(path_results_folder, list_data_history, K_max_upper_bound=1
 
     # Plotting loop
     for i in range(len(list_data_history)):
-        history, color, label = list_data_history[i]
+        history, color, label, _ = list_data_history[i]
         labels_algo = labels[map_label_to_simpler_label(label)]
         abscissas  = []
         ordinates  = []
@@ -80,7 +90,7 @@ def graph_iterations(path_results_folder, list_data_history, K_max_upper_bound=1
             ax.plot([0, K_max], [y, y], color="black", linewidth=0.5, alpha=0.5)
         ax.plot([0, K_max], [i,   i  ], color="black", linewidth=2)
         ax.plot([0, K_max], [i+1, i+1], color="black", linewidth=2)
-        ax.text(-0.5, y_position_algos(i, len(list_data_history))+0.5, label, horizontalalignment="right", verticalalignment="center", rotation=90, fontsize=12)
+        ax.text(-0.6, y_position_algos(i, len(list_data_history))+0.5, label, horizontalalignment="right", verticalalignment="center", rotation=90, fontsize=12)
 
     # Plots settings
     yticks_values = []
@@ -95,14 +105,17 @@ def graph_iterations(path_results_folder, list_data_history, K_max_upper_bound=1
             yticks_labels.append(labels_algo[j])
     # yticks_values.append(len(list_data_history))
     # yticks_labels.append("")
-    ax.set_xticks(ticks=[i*10**(magnitude_K_max-1) for i in range(int(K_max/10**(magnitude_K_max-1))+1)]); ax.tick_params(axis="x", pad=0)
+    if   K_max < 100: ticks = [i for i in range(0, K_max+1, 2)]
+    elif K_max < 500: ticks = [i for i in range(0, K_max+1, 5)]
+    else            : ticks = np.linspace(0, K_max, 51).astype(int) # ticks = [i*10**(magnitude_K_max-1) for i in range(int(K_max/10**(magnitude_K_max-1))+1)]
+    ax.set_xticks(ticks=ticks); ax.tick_params(axis="x", pad=0, rotation=90)
     ax.set_yticks(ticks=yticks_values, labels=yticks_labels); ax.yaxis.tick_right()
     ax.set_xlim(0, K_max)
     ax.set_ylim(0, len(list_data_history))
     ax.set_xlabel("iteration")
     # ax.set_ylabel("iterations status")
-    fig.set_size_inches((10, 5))
-    fig.subplots_adjust(left=0.02, right=0.87, bottom=0.07, top=0.99)
+    fig.set_size_inches((10, 3))
+    fig.subplots_adjust(left=0.04, right=0.87, bottom=0.20, top=0.99)
     # fig.legend(loc="upper center", bbox_to_anchor=(0.5, 1.01), ncol=len(list_data_history))
 
     fig.savefig("/".join([path_results_folder, "plot_iterations_results.pdf"]))

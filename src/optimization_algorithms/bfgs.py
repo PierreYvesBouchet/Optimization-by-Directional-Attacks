@@ -21,16 +21,18 @@ def optim_bfgs(f, df, Phi, x_0, r_0,
                 line_search_fn     = 'strong_wolfe',
                 t_stall            = 0,
                 verbose_iterations = 0,
+                seed               = 0
                 ):
 
-    if verbose_iterations > 0:
-        with torch.no_grad():
-            print("optim_bfgs from obj value = {:>+9.3E}".format(f(Phi(x_0))))
+    rng = torch.Generator()
+    rng.manual_seed(seed)
+    Phi.nb_forward_calls = 0
+
 
     history = fill_history([], "x", "f(Phi(x))", "k", "runtime", "cache size", "iteration status",
                            additional=["step norm"], is_header=True)
-    v_sum = 0
     t_sum = 0
+    v_sum = 0
     converged = False
 
     # x must be a leaf tensor with gradient tracking so that LBFGS can update
@@ -56,15 +58,18 @@ def optim_bfgs(f, df, Phi, x_0, r_0,
     history = fill_history(history, x.detach().clone(), o, k, t, v, s, additional=[step_norm])
     v_sum += v
 
+    if verbose_iterations > 0:
+        with torch.no_grad():
+            print("optim_bfgs from obj value = {:>+9.3E} with seed {}".format(o, seed))
+
     while not converged:
 
         k   += 1
-        vk   = 0
         x_prev = x.detach().clone()
         o_prev = o
+        t_in = time.perf_counter()
 
         def closure():
-            nonlocal vk
             optimizer.zero_grad()
 
             phi_x = Phi(x)                           # keep graph through Phi
@@ -78,15 +83,11 @@ def optim_bfgs(f, df, Phi, x_0, r_0,
 
             # The scalar returned is only used by the line search for comparisons;
             # it does not need to carry a computation graph.
-            with torch.no_grad():
-                loss_val = f(phi_x.detach())
-            vk += 1
+            with torch.no_grad(): loss_val = f(phi_x.detach())
             time.sleep(t_stall)
             return torch.tensor(-float(loss_val), dtype=x.dtype)
 
-        t_start = time.time()
         optimizer.step(closure)
-        t_iter = time.time() - t_start
 
         with torch.no_grad(): o_new = f(Phi(x))
         step_norm = torch.linalg.norm(x.detach() - x_prev, ord=float("inf")).item()
@@ -97,13 +98,12 @@ def optim_bfgs(f, df, Phi, x_0, r_0,
         else:
             s = "failure"
 
-        t = t_iter; t_sum += t
-        v = vk;     v_sum += v
+        t_out = time.perf_counter(); t = t_out-t_in; t_sum += t
+        v = Phi.nb_forward_calls-v_sum;     v_sum += v
         history = fill_history(history, x.detach().clone(), o, k, t, v, s, additional=[step_norm])
 
         if verbose_iterations > 0 and k % verbose_iterations == 0:
-            print("k = {:>4d}, obj = {:>+9.3E}, step = {:>7.1E}, v = {:>8d}, s = {:s}".format(
-                k, o, step_norm, v_sum, s))
+            print("k = {:>4d}, obj = {:>+9.3E}, step = {:>7.1E}, v = {:>8d}, t = {:>6.2f}, s = {:s}".format(k, o, step_norm, v_sum, t_sum, s))
 
         if k >= k_max:
             converged = True
@@ -122,7 +122,7 @@ def optim_bfgs(f, df, Phi, x_0, r_0,
             if verbose_iterations > 0: print("stopping criterion \"excessive runtime\" triggered")
 
     if verbose_iterations > 0:
-        print("k = {:>4d}, obj = {:>+9.3E}, step = {:>7.1E}, v = {:>8d}".format(k, o, step_norm, v_sum))
+        print("k = {:>4d}, obj = {:>+9.3E}, step = {:>7.1E}, v = {:>8d}, t = {:>6.2f}".format(k, o, step_norm, v_sum, t_sum))
         print()
 
     return history

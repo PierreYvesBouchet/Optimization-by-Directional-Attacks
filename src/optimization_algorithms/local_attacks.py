@@ -7,6 +7,8 @@
 
 import torch
 import numpy as np
+import time
+
 from src.optimization_algorithms.tools.fill_history              import fill_history
 from src.optimization_algorithms.tools.evaluate_batch_directions import evaluate_batch_directions
 from src.optimization_algorithms.tools.local_attack_step         import local_attack_step
@@ -23,98 +25,76 @@ def optim_local_attacks(f, df, Phi, x_0, r_0,
                         nb_points_max = float("inf"),
                         runtime_max   = float("inf"),
                         k_max         = float("inf"),
-                        lib           = "default",
-                        algo          = "PGD",
+                        algo          = "FFGSM",
                         enable_search = False,
                         enable_speculative_search = False,
-                        t_stall       = 0,
                         verbose_iterations = 0,
+                        seed          = 0
                         ):
 
+    rng = torch.Generator()
+    rng.manual_seed(seed)
+    Phi.nb_forward_calls = 0
+
     obj = lambda x: f(Phi(x))
-    if verbose_iterations > 0: print("optim_local_attacks from obj value = {:>+9.3E}".format(obj(x_0)))
 
     history = fill_history([], "x", "f(Phi(x))", "k", "runtime", "cache size", "iteration status", additional=["attack radius"], is_header=True)
-    v_sum = 0
     t_sum = 0
     converged = False; nb_stall_iters = 0; max_stall_iters = max(np.inf,Phi.n+1)
-
-    zero = torch.zeros_like(x_0)
 
     x = x_0.clone().detach(); o = obj(x); k = 0; t = 0; v = 0; r = r_0; s = "init"
     history = fill_history(history, x, o, k, t, v, s, additional=[r])
     searches_counter = 0
-    d_speculative = zero
+
+    if verbose_iterations > 0: print("optim_local_attacks("+algo+") from obj value = {:>+9.3E} with seed {}".format(o, seed))
 
     while not(converged):
 
         k += 1
+        v_sum = Phi.nb_forward_calls
+        t_in = time.perf_counter()
+        y = Phi(x)
 
-        if enable_speculative_search and not(torch.equal(d_speculative, zero)):
-            altered_line_search_iterator = altered_line_search_step(x, d_speculative)
-            dL, vL, tL = evaluate_batch_directions(x, altered_line_search_iterator, obj, t_stall = t_stall)
-        else:
-            dL = zero
-            vL = 0
-            tL = 0
+        # local_attack_step_iterator = local_attack_step(Phi, x, y, df(y), r, r_min=r_min, r_max=r_max, r_mult_list = [1.2, 1], algo=algo, rng=rng)
+        local_attack_step_iterator = local_attack_step(Phi, x, y, df(y), r, r_min=r_min, r_max=r_max, algo=algo, rng=rng)
+        tA, oA = evaluate_batch_directions(x, o, local_attack_step_iterator, obj)
+        rA = torch.linalg.norm(tA-x, ord=float("inf"))
 
-        if obj(x+dL) > obj(x):
+        if oA > o:
 
-            x += dL
-            r *= 1
-            tA = 0
-            tS = 0
-            vA = 0
-            vS = 0
-            s = "speculative"
-            d_speculative = dL
+            x = tA
+            o = oA
+            # r = min(r_max, max(r_min, rA, r))
+            r = min(r_max, 1.1*r)
+            nb_stall_iters = 0
+            s = "attack"
 
         else:
 
-            local_attack_step_iterator = local_attack_step(Phi, x, df(Phi(x)), r, r_min=r_min, r_max=r_max,
-                                                           r_mult_list = [1.2, 1],
-                                                           lib=lib, algo=algo)
-            dA, vA, tA = evaluate_batch_directions(x, local_attack_step_iterator, obj, opportunistic=True)
+            search_step_iterator = search_step(x, r_0*np.sqrt(searches_counter), r_max=r_max, empty_search=not enable_search, light_search=True, rng=rng)
+            tS, oS = evaluate_batch_directions(x, o, search_step_iterator, obj)
+            searches_counter += 1
 
-            rA = torch.linalg.norm(dA, ord=float("inf"))
-            if obj(x+dA) > obj(x):
+            if oS > o:
 
-                x += dA
-                r = min(r_max, max(r_min, rA))
+                x = tS
+                o = oS
+                r = max(r_min, r/1.1)
                 nb_stall_iters = 0
-                tS = 0
-                vS = 0
-                s = "attack"
-                d_speculative = dA
+                s = "search"
 
             else:
 
-                search_step_iterator = search_step(x, r_0*np.sqrt(searches_counter), r_max=r_max, empty_search=not enable_search, light_search=True)
-                dS, vS, tS = evaluate_batch_directions(x, search_step_iterator, obj)
-                searches_counter += 1
+                r = max(r_min, r/1.1)
+                nb_stall_iters += 1
+                s = "failure"
 
-                if obj(x+dS) > obj(x):
-
-                    x += dS
-                    r /= 1.1
-                    nb_stall_iters = 0
-                    s = "search"
-                    d_speculative = dS
-
-                else:
-
-                    r /= 1.5
-                    nb_stall_iters += 1
-                    s = "failure"
-                    d_speculative = zero
-
-        o = obj(x)
-        t = tL+tA+tS; t_sum += t
-        v = vL+vA+vS; v_sum += v
+        t_out = time.perf_counter(); t = t_out-t_in; t_sum += t
+        v = Phi.nb_forward_calls-v_sum; v_sum += v
         history = fill_history(history, x, o, k, t, v, s, additional=[r])
 
         if verbose_iterations > 0 and k % verbose_iterations == 0:
-            print("k = {:>4d}, obj = {:>+9.3E}, r = {:>7.1E}, v = {:>8d}, s = {:s}".format(k, o, r, v_sum, s))
+            print("k = {:>4d}, obj = {:>+9.3E}, r = {:>7.1E}, v = {:>8d}, t = {:>6.2f}, s = {:s}".format(k, o, r, v_sum, t_sum, s))
 
         if k >= k_max:
             converged = True
@@ -142,7 +122,7 @@ def optim_local_attacks(f, df, Phi, x_0, r_0,
                 print("stopping criterion \"excessive runtime\" triggered")
 
     if verbose_iterations > 0:
-        print("k = {:>4d}, obj = {:>+9.3E}, r = {:>7.1E}, v = {:>8d}".format(k, o, r, v_sum))
+        print("k = {:>4d}, obj = {:>+9.3E}, r = {:>7.1E}, v = {:>8d}, t = {:>6.2f}".format(k, o, r, v_sum, t_sum))
         print()
 
     return history

@@ -12,27 +12,31 @@ import time
 import torch
 
 # Imports of the default attack algorithm
-from src.attack_algorithms.attack import attack
+from src.attack_algorithms.attack import torchattack_attack, bb_attack
+from src.optimization_algorithms.tools.backprop_ascent_step import compute_normalized_grad_ascent
 from src.attack_algorithms.Phi_xr_model import Phi_xr_model
 
 
 
-#%% Function analyzing the relevance of "attack" algo from "lib" used on Phi_x
+#%% Function analyzing the relevance of "attack" algo
 #   for the purpose to solve maximize f(Phi(x))
 #   measures the attack's runtime and whether or not the attack is successful
 #       (in the sense of whether or not f(Phi(x+d)) > f(Phi(x))),
 #   at various x for various radii r, always in the direction u = df(Phi(x));
-#   then stores the results in attack_analysis(lib;algo).pt located at path_to_save
+#   then stores the results in attack_analysis_algo.pt located at path_to_save
 
 def attack_analysis(f, df, Phi, X, path_to_save,
                     exp_r_min = -6, exp_r_max = 0,
-                    lib = "default", algo = "default", verbose = 0,
+                    algo = "default", verbose = 0,
                     ):
 
-    # Shorthand for f o Phi
-    obj = lambda x: f(Phi(x))
 
-    if verbose >= 1: print("study of {:s} algo from {:s} lib".format(algo, lib))
+    # Shorthand for f o Phi
+    def obj(x):
+        with torch.no_grad(): return f(Phi(x))
+
+    if verbose >= 1: print("Algorithm {:s}".format(algo))
+
 
     # Sorting X by ascending values of f(Phi( ))
     X.sort(key=lambda x: obj(x))
@@ -43,6 +47,7 @@ def attack_analysis(f, df, Phi, X, path_to_save,
     R = [i*10**j for j in range(exp_r_min, exp_r_max) for i in [1, 5]]
     nb_r = len(R)
 
+
     # List of values f(Phi(x)) for x in X
     O = []
 
@@ -50,6 +55,7 @@ def attack_analysis(f, df, Phi, X, path_to_save,
     S = [] # successes or not, in the sense bool(f(Phi(x+d)) > f(Phi(x)))
     T = [] # runtimes
     A = [] # f(Phi(x+d))
+
 
     # Number of digits in the product nb_x * nb_r
     digits = 0
@@ -68,6 +74,13 @@ def attack_analysis(f, df, Phi, X, path_to_save,
     str_sep      = "-"*(2*digits+1 + 8 + 11 + 11 + 11 + 5 + 7) + "-"*3*7
     if verbose >= 3: print(header); print(str_sep)
 
+
+    # Model initialization
+    x0 = X[0]
+    y0 = Phi(x0)
+    Phi_xr = Phi_xr_model(Phi, x0, y0, 1)
+
+
     # Run per (x,r) in X times R; loop as [[(x,r) for r in R] for x in X]
     for i in range(nb_x):
 
@@ -76,20 +89,34 @@ def attack_analysis(f, df, Phi, X, path_to_save,
         S_x = []
         T_x = []
         A_x = []
-        Phi_xr = Phi_xr_model(Phi, x, 1)
+        Phi_xr.set_x(x, yx)
 
         for j in range(nb_r):
 
             r = R[j]
             Phi_xr.set_r(r)
 
-            # Attack done here, and its recorded runtime starts and stops here
-            t_in = time.perf_counter()
-            d = attack(Phi_xr, Phi_xr.get_reference_for_attack(), df(yx), 0.5, lib=lib, algo=algo)
-            d_scaled = Phi_xr.rescale_back_attack_direction(d)
-            # d_scaled = d_scaled*r/torch.linalg.norm(d_scaled, ord=float("inf"))
-            t_out = time.perf_counter()
-            # End of attack and runtime record
+            if algo == "backprop":
+                # Backpropagation pass done here, and its recorded runtime starts and stops here
+                t_in = time.perf_counter()
+                d_scaled = compute_normalized_grad_ascent(df, Phi, x, r)
+                t_out = time.perf_counter()
+                # End of attack and runtime record
+
+            elif algo == "SimBA":
+                # Attack done here, and its recorded runtime starts and stops here
+                t_in = time.perf_counter()
+                d_scaled = bb_attack(Phi, x, yx+df(yx), r)
+                t_out = time.perf_counter()
+                # End of attack and runtime record
+
+            else:
+                # Attack done here, and its recorded runtime starts and stops here
+                t_in = time.perf_counter()
+                d = torchattack_attack(Phi_xr, Phi_xr.get_reference_for_attack(), df(yx), 0.5, algo=algo)
+                d_scaled = Phi_xr.rescale_back_attack_direction(d)
+                t_out = time.perf_counter()
+                # End of attack and runtime record
 
             xd = x+d_scaled; oxd = obj(xd)
             success = (oxd > ox)
@@ -147,5 +174,5 @@ def attack_analysis(f, df, Phi, X, path_to_save,
     history_analysis = [["X", "R", "obj(X)", "status of [[(x,r) for r in R] for x in X]", "runtime of [[(x,r) for r in R] for x in X]", "gain of [[(x,r) for r in R] for x in X]"],
                         [X, R, O, S, T, A],
                         ]
-    name_to_save = "attack_analysis_("+lib+";"+algo+").pt"
+    name_to_save = "attack_analysis_"+algo+".pt"
     torch.save(history_analysis, "/".join([path_to_save, name_to_save]))

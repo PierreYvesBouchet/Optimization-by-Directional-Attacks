@@ -6,31 +6,29 @@
 #%% Libraries import
 
 import torch
-import time
 
 
 
-#%% Evaluation of a batch of directions to identify ascent ones, if any
+#%% Evaluation of a batch of directions to identify ascent ones, if any. Returns the best candidate resulting from the trial directions
 
-def evaluate_batch_directions(x, directions_iterator, obj, t_stall = 0, opportunistic=True, skip=False):
-    best = torch.zeros_like(x); o_best = obj(x)
-    number_trial = 0
+def evaluate_batch_directions(x, o, directions_iterator, obj, opportunistic=True, skip=False):
+    x_best = x.clone().detach(); o_best = o
     stop = skip
-    t_in = time.perf_counter()
     while not(stop):
         try:
             d = next(directions_iterator)
-        except:
+        except StopIteration:
+            d = torch.zeros_like(x)
+            stop = True
+        except Exception as e:
+            print("evaluate_batch_directions: exception raised while evaluating a trial direction: {}".format(e))
             d = torch.zeros_like(x)
             stop = True
         if not(stop):
-            number_trial += 1
-            time.sleep(t_stall)
-            o_d = obj(x+d)
-            if o_d > o_best:
-                best = d
-                o_best = o_d
+            x_t = x+d
+            o_t = obj(x_t)
+            if o_t > o_best:
+                x_best = x_t
+                o_best = o_t
                 if opportunistic: stop = True
-    t_out = time.perf_counter()
-    runtime = t_out-t_in
-    return best, number_trial, runtime
+    return x_best, o_best
