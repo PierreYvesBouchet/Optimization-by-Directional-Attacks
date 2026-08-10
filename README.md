@@ -15,6 +15,18 @@ The project is written in Python 3.12.2. All required Python packages are listed
 
 ### Additional installation related to external datasets
 
+#### ResNet18 problem
+To run the proof-of-concept problem based on ResNet18, download the dataset of images first. It is available at[this link](https://github.com/EliSchwartz/imagenet-sample-images). Then, set the 1000 images it contains at the location
+```
+problems/
+	barycentric_image_into_resnet/
+		problem/
+			build_data/
+				dataset/
+```
+
+
+#### Warcraft problem
 To run the problem related to counterfactual Warcraft maps, download the dataset of maps first. It is available at [this link](https://edmond.mpg.de/dataset.xhtml?persistentId=doi:10.17617/3.YJCQ5S). Then, unzip it, collect the folder "warcraft_maps_shortest_path_oneskin" and rename it as "warcraft_maps". This folder contains four sub-folders, "12x12", "18x18", "24x24" and "30x30", but only the "12x12" folder is required to replicate our experiments so the others three may be deleted. Finally, go to the folder
 ```
 problems/
