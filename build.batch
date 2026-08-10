@@ -1,0 +1,26 @@
+#!/bin/bash
+#SBATCH --cpus-per-task=1
+#SBATCH --mem=5G
+#SBATCH --time=00:02:00
+#SBATCH --array=1-3
+#SBATCH --output=slurm_outputs/%A_%a.out
+
+source venv/bin/activate
+
+i=1
+
+for n in -2
+do
+    for problem in warcraft_map_counterfactual barycentric_image_into_resnet bio_pinn
+    do
+        if [ $SLURM_ARRAY_TASK_ID -eq $i ]
+        then
+            python main.py $problem $n 0 0
+        fi
+        (( i = $i +1 ))
+    done
+done
+
+sleep 30
+
+# /!\ Parameter #SBATCH --array=1-j must have j = number of problems
