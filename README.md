@@ -29,8 +29,12 @@ problems/
 ```
 
 
+#### Bio-PINN problem
+All data is already given in the appropriate subfolder. There is no external file to download on this problem.
+
+
 #### Warcraft problem
-To run the problem related to counterfactual Warcraft maps, first, download the dataset of maps first. It is available at [this link](https://edmond.mpg.de/dataset.xhtml?persistentId=doi:10.17617/3.YJCQ5S). Then, unzip it, collect the folder "warcraft_maps_shortest_path_oneskin" and rename it as "warcraft_maps". This folder contains four sub-folders, "12x12", "18x18", "24x24" and "30x30", but only the "12x12" folder is required to replicate our experiments so the others three may be deleted. Finally, go to the folder
+To run the problem related to counterfactual Warcraft maps, first, download the dataset of maps. It is available at [this link](https://edmond.mpg.de/dataset.xhtml?persistentId=doi:10.17617/3.YJCQ5S). Then, unzip it, collect the folder "warcraft_maps_shortest_path_oneskin" and rename it as "warcraft_maps". This folder contains four sub-folders, "12x12", "18x18", "24x24" and "30x30", but only the "12x12" folder is required to replicate our experiments so the others three may be deleted. Finally, go to the folder
 ```
 problems/
 	warcraft_maps_counterfactual/
